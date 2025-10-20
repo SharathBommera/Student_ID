@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ID Card Sheet Generator (Validated Excel + PDF Export)</title>
+
+<!-- Libraries -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<!-- Styles -->
+<style>
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: linear-gradient(120deg, #eaf3fb, #ffffff);
+    text-align: center;
+    margin: 0;
+    padding: 0;
+  }
+
+  h2 {
+    margin-top: 20px;
+    color: #003366;
+  }
+
+  input[type="file"], input[type="text"] {
+    margin: 8px;
+    padding: 8px;
+    border: 2px solid #0078d4;
+    border-radius: 6px;
+    font-size: 14px;
+  }
+
+  button {
+    padding: 10px 20px;
+    margin: 10px;
+    border: none;
+    background: #0078d4;
+    color: white;
+    border-radius: 6px;
+    font-weight: bold;
+    cursor: pointer;
+  }
+
+  button:hover {
+    background: #005fa3;
+  }
+
+  .error-box {
+    background: #ffe5e5;
+    color: #c0392b;
+    border: 2px solid #e74c3c;
+    display: inline-block;
+    border-radius: 8px;
+    padding: 10px 20px;
+    margin: 10px auto;
+    width: 80%;
+    text-align: left;
+  }
+
+  .page {
+    margin: 20px auto;
+    width: 21cm;
+    min-height: 29.7cm;
+    background: white;
+    padding: 10px;
+    box-shadow: 0 0 8px rgba(0,0,0,0.2);
+    page-break-after: always;
+  }
+
+  .container {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .id-card {
+    width: 6cm;
+    height: 8cm;
+    border: 2px solid #0078d4;
+    border-radius: 10px;
+    margin: 10px;
+    padding: 8px;
+    box-sizing: border-box;
+    background: linear-gradient(180deg, #ffffff 80%, #e8f1fb);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    text-align: center;
+    position: relative;
+  }
+
+  .school-name {
+    font-weight: bold;
+    font-size: 13px;
+    color: #005fa3;
+    text-transform: uppercase;
+  }
+
+  .mandal-district {
+    font-size: 11px;
+    color: #333;
+    margin-bottom: 5px;
+  }
+
+  .photo-frame {
+    width: 3cm;
+    height: 3.5cm;
+    border: 1px solid #999;
+    border-radius: 6px;
+    overflow: hidden;
+    margin: 6px 0;
+  }
+
+  .photo-frame img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .details {
+    font-size: 11.5px;
+    color: #333;
+    width: 100%;
+    text-align: center;
+  }
+
+  .details div {
+    margin: 2px 0;
+  }
+
+  .upload-btn {
+    font-size: 10px;
+    margin-bottom: 5px;
+  }
+
+  .download-btn {
+    margin-top: 10px;
+    padding: 8px 15px;
+    background: #28a745;
+    border-radius: 6px;
+  }
+
+  .download-btn:hover {
+    background: #1e7e34;
+  }
+
+  @media print {
+    .upload-btn, .download-btn { display: none !important; }
+  }
+</style>
+</head>
+
+<body>
+  <h2>Excel to ID Card Sheet Generator (6 per A4 Page)</h2>
+
+  <!-- School Details Input -->
+  <div id="schoolInputSection">
+    <input type="text" id="schoolNameInput" placeholder="Enter School Name (e.g., ZPHS Boys, Mandamarry)">
+    <input type="text" id="mandalInput" placeholder="Enter Mandal (e.g., Mandamarry)">
+    <input type="text" id="districtInput" placeholder="Enter District (e.g., Mancherial)">
+    <button onclick="saveSchoolDetails()">Next</button>
+  </div>
+
+  <!-- File Upload -->
+  <div id="fileUploadSection" style="display:none;">
+    <input type="file" id="excelFile" accept=".xls,.xlsx">
+    <div id="errorBox"></div>
+  </div>
+
+  <div id="sheetContainer"></div>
+
+<script>
+let schoolName = '', mandal = '', district = '';
+const REQUIRED_COLUMNS = [
+  "Admission Number",
+  "Student Name",
+  "Father Name",
+  "Father Mobile Number",
+  "Class"
+];
+
+function saveSchoolDetails() {
+  const school = document.getElementById('schoolNameInput').value.trim();
+  const mandalInput = document.getElementById('mandalInput').value.trim();
+  const districtInput = document.getElementById('districtInput').value.trim();
+
+  if (!school || !mandalInput || !districtInput) {
+    alert('Please fill in all fields.');
+    return;
+  }
+
+  schoolName = school;
+  mandal = mandalInput;
+  district = districtInput;
+
+  document.getElementById('schoolInputSection').style.display = 'none';
+  document.getElementById('fileUploadSection').style.display = 'block';
+}
+
+document.getElementById('excelFile').addEventListener('change', handleExcel);
+
+function handleExcel(event) {
+  const file = event.target.files[0];
+  const errorBox = document.getElementById('errorBox');
+  errorBox.innerHTML = '';
+
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const workbook = XLSX.read(data, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+      // Validate headers
+      const headers = Object.keys(json[0] || {});
+      validateHeaders(headers);
+
+      if (json.length === 0) throw new Error("The Excel sheet appears to be empty or unreadable.");
+
+      displayCards(json);
+    } catch (err) {
+      errorBox.innerHTML = `<div class="error-box"><strong>Error:</strong> ${err.message}</div>`;
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function validateHeaders(headers) {
+  if (headers.length === 0)
+    throw new Error("No headers found. Ensure the Excel file has the correct column names.");
+
+  const missing = REQUIRED_COLUMNS.filter(col => !headers.includes(col));
+  const extra = headers.filter(col => !REQUIRED_COLUMNS.includes(col));
+
+  if (missing.length > 0)
+    throw new Error(`Missing required columns: ${missing.join(", ")}`);
+
+  if (JSON.stringify(headers) !== JSON.stringify(REQUIRED_COLUMNS))
+    throw new Error(`Incorrect column order. Expected: ${REQUIRED_COLUMNS.join(" → ")}`);
+
+  if (extra.length > 0)
+    alert(`⚠️ Note: Extra columns found (${extra.join(", ")}). They will be ignored.`);
+}
+
+function displayCards(data) {
+  const container = document.getElementById('sheetContainer');
+  container.innerHTML = '';
+  let pageDiv = null;
+
+  data.forEach((row, index) => {
+    if (index % 6 === 0) {
+      pageDiv = document.createElement('div');
+      pageDiv.className = 'page';
+
+      const cardContainer = document.createElement('div');
+      cardContainer.className = 'container';
+      pageDiv.appendChild(cardContainer);
+
+      const downloadBtn = document.createElement('button');
+      downloadBtn.className = 'download-btn';
+      downloadBtn.innerText = `Download Page ${Math.floor(index/6)+1} as PDF`;
+      downloadBtn.addEventListener('click', () => downloadAsPDF(cardContainer, Math.floor(index/6)+1));
+
+      pageDiv.appendChild(downloadBtn);
+      container.appendChild(pageDiv);
+    }
+
+    const card = document.createElement('div');
+    card.className = 'id-card';
+
+    const schoolDiv = document.createElement('div');
+    schoolDiv.className = 'school-name';
+    schoolDiv.innerText = schoolName;
+
+    const mandalDistDiv = document.createElement('div');
+    mandalDistDiv.className = 'mandal-district';
+    mandalDistDiv.innerText = `${mandal}, ${district}`;
+
+    const photoFrame = document.createElement('div');
+    photoFrame.className = 'photo-frame';
+    const img = document.createElement('img');
+    img.src = row.Photo || '';
+    photoFrame.appendChild(img);
+
+    const upload = document.createElement('input');
+    upload.type = 'file';
+    upload.accept = 'image/*';
+    upload.className = 'upload-btn';
+    upload.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+          img.src = evt.target.result;
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+
+    const details = document.createElement('div');
+    details.className = 'details';
+    details.innerHTML = `
+      <div><strong>Admission No:</strong> ${row["Admission Number"] || ''}</div>
+      <div><strong>Name:</strong> ${row["Student Name"] || ''}</div>
+      <div><strong>Father:</strong> ${row["Father Name"] || ''}</div>
+      <div><strong>Mobile:</strong> ${row["Father Mobile Number"] || ''}</div>
+      <div><strong>Class:</strong> ${row["Class"] || ''}</div>
+    `;
+
+    card.appendChild(schoolDiv);
+    card.appendChild(mandalDistDiv);
+    card.appendChild(photoFrame);
+    card.appendChild(upload);
+    card.appendChild(details);
+
+    const currentPage = container.lastElementChild.querySelector('.container');
+    currentPage.appendChild(card);
+  });
+}
+
+async function downloadAsPDF(container, pageNumber) {
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF('p', 'mm', 'a4');
+
+  const uploadButtons = container.querySelectorAll('.upload-btn');
+  uploadButtons.forEach(btn => btn.style.display = 'none');
+
+  const canvas = await html2canvas(container, { scale: 2 });
+  const imgData = canvas.toDataURL('image/jpeg', 1.0);
+  const pageWidth = 210;
+  const imgHeight = canvas.height * pageWidth / canvas.width;
+  pdf.addImage(imgData, 'JPEG', 0, 0, pageWidth, imgHeight);
+  pdf.save(`ID_Cards_Page_${pageNumber}.pdf`);
+
+  uploadButtons.forEach(btn => btn.style.display = 'block');
+}
+</script>
+</body>
+</html>
